@@ -575,6 +575,34 @@ int sys_getdents(int fd, void* dirbuf, int count)
   return 0; //stub
 }
 
+/* CS152 Lab 3: Spectre */
+
+#define L1_CACHE_BYTES 64
+uint8_t leak_array[2*L1_CACHE_BYTES] __attribute__ ((aligned (L1_CACHE_BYTES)));
+
+int sys_leak(size_t index, int shift)
+{
+  unsigned long m;
+  /* Use divides to artificially increase branch resolution latency */
+  asm volatile (
+    "div %0, %1, zero\t\n"
+    "div %0, %0, zero\t\n"
+    "div %0, %0, zero\t\n"
+    "div %0, %0, zero\t\n"
+    "div %0, %0, zero\t\n"
+    : "=r" (m)
+    : "r" (index));
+
+  if (index < (ARRAY_SIZE(leak_array) & m)) {
+    uint8_t data = leak_array[index];
+    index = (data >> shift) & 0x1;
+    data = leak_array[index * L1_CACHE_BYTES];
+    asm volatile ("rdcycle zero"); // Speculation barrier
+    return data;
+  }
+  return -1;
+}
+
 static int sys_stub_success()
 {
   return 0;
